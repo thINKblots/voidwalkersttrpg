@@ -44,7 +44,8 @@ def get_default_game_state():
         "story_log": [],
         "game_started": False,
         "current_encounter": None,
-        "world_context": ""
+        "world_context": "",
+        "tts_enabled": False
     }
 
 if 'game_state' not in st.session_state:
@@ -111,6 +112,59 @@ def log_combat(event: str):
     timestamp = datetime.now().strftime("%H:%M:%S")
     st.session_state.game_state["combat_log"].append(f"[{timestamp}] {event}")
     save_game_state()
+
+def speak_text(text: str, button_key: str):
+    """Display text with a TTS button using Web Speech API"""
+    import hashlib
+    import html
+
+    # Clean text for speech (remove markdown formatting)
+    clean_text = text.replace('**', '').replace('*', '').replace('#', '').replace('_', '')
+    # Escape for JavaScript
+    escaped_text = html.escape(clean_text).replace("'", "\\'").replace("\n", " ")
+
+    # Create unique key for this text
+    text_hash = hashlib.md5(text.encode()).hexdigest()[:8]
+    unique_key = f"tts_{button_key}_{text_hash}"
+
+    col1, col2 = st.columns([0.95, 0.05])
+
+    with col1:
+        st.markdown(text)
+
+    with col2:
+        # Create button that triggers JavaScript TTS
+        if st.button("🔊", key=unique_key, help="Read aloud"):
+            # Inject JavaScript to use Web Speech API
+            js_code = f"""
+            <script>
+            (function() {{
+                const text = '{escaped_text}';
+                const utterance = new SpeechSynthesisUtterance(text);
+
+                // Configure voice settings for quality
+                utterance.rate = 0.9;  // Slightly slower for better clarity
+                utterance.pitch = 1.0;
+                utterance.volume = 1.0;
+
+                // Try to use a high-quality voice if available
+                const voices = window.speechSynthesis.getVoices();
+                const preferredVoice = voices.find(voice =>
+                    voice.name.includes('Google') ||
+                    voice.name.includes('Microsoft') ||
+                    voice.lang.startsWith('en')
+                );
+                if (preferredVoice) {{
+                    utterance.voice = preferredVoice;
+                }}
+
+                // Cancel any ongoing speech and speak
+                window.speechSynthesis.cancel();
+                window.speechSynthesis.speak(utterance);
+            }})();
+            </script>
+            """
+            st.components.v1.html(js_code, height=0)
 
 # ============== DICE ROLLING & MECHANICS (GEMINI) ==============
 def roll_dice(dice_notation: str) -> Dict:
@@ -655,7 +709,7 @@ else:
         # Display world context
         if game_state["world_context"] and not game_state.get("world_shown", False):
             st.markdown("### 🌍 Welcome to Voidwalkers")
-            st.write(game_state["world_context"])
+            speak_text(game_state["world_context"], "world_intro")
             game_state["world_shown"] = True
             save_game_state()
 
@@ -666,7 +720,7 @@ else:
             current_loc = next((loc for loc in game_state["locations"]
                               if loc["name"] == game_state["current_location"]), None)
             if current_loc:
-                st.write(current_loc["description"])
+                speak_text(current_loc["description"], f"location_{game_state['current_location']}")
 
         st.divider()
 
@@ -684,7 +738,7 @@ else:
                         game_state["world_context"]
                     )
                     st.success(f"You discovered: {new_loc['name']}")
-                    st.write(new_loc["description"])
+                    speak_text(new_loc["description"], f"new_location_{new_loc['name']}")
 
         with col2:
             if st.button("👥 Meet Someone"):
@@ -695,7 +749,7 @@ else:
                         game_state["current_location"]
                     )
                     st.success(f"You meet: {npc['name']}")
-                    st.write(npc["description"])
+                    speak_text(npc["description"], f"npc_{npc['name']}")
 
         with col3:
             if st.button("⚔️ Seek Combat"):
@@ -710,9 +764,9 @@ else:
                     )
 
                     st.warning(f"⚔️ Combat Initiated!")
-                    st.write(narration)
-                    st.write(f"**{encounter['name']}** (HP: {encounter['hp']})")
-                    st.write(encounter["description"])
+                    # Combine narration and description for TTS
+                    combat_intro = f"{narration}\n\n{encounter['name']}. {encounter['description']}"
+                    speak_text(combat_intro, f"combat_encounter_{encounter['name']}")
 
                     log_combat(f"Encountered {encounter['name']}")
                     save_game_state()
@@ -749,14 +803,14 @@ else:
                             game_state["current_location"]
                         )
                         st.success("✅ Success!")
-                        st.write(narration)
+                        speak_text(narration, f"action_success_{roll_result['total']}")
                     else:
                         narration = narrate_event(
                             f"failed to {custom_action}",
                             game_state["current_location"]
                         )
                         st.error("❌ Failure!")
-                        st.write(narration)
+                        speak_text(narration, f"action_failure_{roll_result['total']}")
 
                     log_story(f"{custom_action} - {'Success' if success else 'Failure'}")
                     save_game_state()
@@ -811,7 +865,7 @@ else:
                             "in combat"
                         )
 
-                        st.write(combat_narration)
+                        speak_text(combat_narration, f"combat_round_{result['player_hp']}_{result['enemy_hp']}")
 
                         # Update stats
                         game_state["character"]["hp"] = result["player_hp"]
@@ -879,7 +933,7 @@ else:
                 context = f"Character: {game_state['character']['name']}, Location: {game_state['current_location']}"
                 quest = generate_quest(context)
                 st.success(f"New Quest: {quest['title']}")
-                st.write(quest["description"])
+                speak_text(quest["description"], f"quest_{quest['title']}")
 
         st.divider()
 
@@ -889,7 +943,7 @@ else:
         if active_quests:
             for quest in active_quests:
                 with st.expander(f"📌 {quest['title']}"):
-                    st.write(quest["description"])
+                    speak_text(quest["description"], f"active_quest_{quest['title']}")
                     if st.button(f"Complete Quest", key=quest["title"]):
                         quest["status"] = "completed"
                         st.success("Quest completed!")
