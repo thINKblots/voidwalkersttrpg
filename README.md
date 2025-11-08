@@ -127,7 +127,3 @@ Contributions welcome! Please open an issue or PR.
 ---
 
 **Note**: This game requires API credits for both Anthropic and Google Gemini. Usage costs will vary based on gameplay.
-# voidwalkersttrpg
-# voidwalkersttrpg
-# voidwalkersttrpg
-# voidwalkersttrpg
