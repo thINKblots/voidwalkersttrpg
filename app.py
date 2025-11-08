@@ -1,7 +1,7 @@
 """
 Voidwalkers - A Procedurally Generated TTRPG
 Uses Claude Sonnet 4.5 for story elements and world building
-Uses Gemini 2.5 Pro for rules and mechanics
+Uses Gemini 2.5 Pro for rules, dice rolling, and mechanics
 """
 
 import anthropic
