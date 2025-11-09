@@ -12,6 +12,7 @@ A fully procedural tabletop RPG powered by AI:
 - 🎲 Dice rolling and action adjudication
 - 📖 Story logging and save/load functionality
 - 🎮 Full gameplay loop with exploration, combat, and questing
+- 🔊 High-quality text-to-speech narration with Google Cloud TTS
 
 ## Local Development
 
@@ -19,7 +20,7 @@ A fully procedural tabletop RPG powered by AI:
 
 - Python 3.8+
 - Anthropic API key (for Claude Sonnet)
-- Google Gemini API key
+- Google Cloud API key with Text-to-Speech and Gemini AI enabled
 
 ### Setup
 
@@ -40,13 +41,21 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-4. Add your API keys to `.streamlit/secrets.toml`:
+4. Set up Google Cloud credentials for Text-to-Speech:
+   - Create a Google Cloud project and enable the Text-to-Speech API
+   - Create a service account and download the JSON key file
+   - Set the environment variable:
+   ```bash
+   export GOOGLE_APPLICATION_CREDENTIALS="/path/to/your-service-account-key.json"
+   ```
+
+5. Add your API keys to `.streamlit/secrets.toml`:
 ```toml
 ANTHROPIC_API_KEY = "your-anthropic-key"
 GEMINI_API_KEY = "your-gemini-key"
 ```
 
-5. Run the app:
+6. Run the app:
 ```bash
 streamlit run app.py
 ```
@@ -75,13 +84,23 @@ git push -u origin main
 2. Sign in with GitHub
 3. Click "New app"
 4. Select your repository, branch (main), and main file (app.py)
-5. Click "Advanced settings" → "Secrets"
-6. Add your API keys in TOML format:
+5. Click "Advanced settings"
+6. Add your API keys in the "Secrets" section in TOML format:
 ```toml
 ANTHROPIC_API_KEY = "your-anthropic-key"
 GEMINI_API_KEY = "your-gemini-key"
+
+# Google Cloud service account JSON (paste entire JSON as a string)
+GOOGLE_APPLICATION_CREDENTIALS_JSON = '''
+{
+  "type": "service_account",
+  "project_id": "your-project",
+  ...
+}
+'''
 ```
-7. Click "Deploy!"
+7. The app will automatically configure Google Cloud credentials from the secret
+8. Click "Deploy!"
 
 ### Important Security Notes
 
@@ -114,6 +133,7 @@ GEMINI_API_KEY = "your-gemini-key"
 - **Streamlit**: Web framework
 - **Anthropic Claude Sonnet 4.5**: Story generation and narration
 - **Google Gemini 2.0**: Game mechanics and rules engine
+- **Google Cloud Text-to-Speech**: High-quality voice narration with Neural2 voices
 - **Python**: Backend logic
 
 ## License

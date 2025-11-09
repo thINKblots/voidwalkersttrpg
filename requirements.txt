@@ -1,3 +1,4 @@
 streamlit
 anthropic
 google-generativeai
+google-cloud-texttospeech

@@ -6,10 +6,12 @@ Uses Gemini 2.5 Pro for rules, dice rolling, and mechanics
 
 import anthropic
 import google.generativeai as genai
+from google.cloud import texttospeech
 import streamlit as st
 import random
 import json
 import os
+import base64
 from datetime import datetime
 from typing import List, Dict, Optional
 
@@ -18,6 +20,15 @@ from typing import List, Dict, Optional
 try:
     ANTHROPIC_API_KEY = st.secrets["ANTHROPIC_API_KEY"]
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+
+    # Handle Google Cloud credentials from Streamlit secrets for deployment
+    if "GOOGLE_APPLICATION_CREDENTIALS_JSON" in st.secrets:
+        import tempfile
+        import json as json_lib
+        # Write credentials to a temporary file
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
+            json_lib.dump(dict(st.secrets["GOOGLE_APPLICATION_CREDENTIALS_JSON"]), f)
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = f.name
 except:
     # Fallback to environment variables for local development
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
@@ -30,6 +41,14 @@ if not ANTHROPIC_API_KEY or not GEMINI_API_KEY:
 sonnet_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 genai.configure(api_key=GEMINI_API_KEY)
 gemini_client = genai.GenerativeModel('gemini-2.0-flash-exp')
+
+# Initialize Google Cloud Text-to-Speech client
+# Note: This uses GOOGLE_APPLICATION_CREDENTIALS env var or default credentials
+try:
+    tts_client = texttospeech.TextToSpeechClient()
+except Exception as e:
+    st.warning(f"⚠️ Google Cloud TTS not configured. TTS features will be unavailable. Error: {str(e)}")
+    tts_client = None
 
 # Initialize session state
 def get_default_game_state():
@@ -113,15 +132,61 @@ def log_combat(event: str):
     st.session_state.game_state["combat_log"].append(f"[{timestamp}] {event}")
     save_game_state()
 
-def speak_text(text: str, button_key: str):
-    """Display text with a TTS button using Web Speech API"""
+# Create audio cache directory
+AUDIO_CACHE_DIR = "audio_cache"
+if not os.path.exists(AUDIO_CACHE_DIR):
+    os.makedirs(AUDIO_CACHE_DIR)
+
+def generate_tts_audio(text: str, text_hash: str) -> str:
+    """Generate audio using Google Cloud TTS and cache it"""
     import hashlib
-    import html
+
+    if tts_client is None:
+        raise Exception("TTS client not initialized. Please configure Google Cloud credentials.")
+
+    cache_file = os.path.join(AUDIO_CACHE_DIR, f"{text_hash}.mp3")
+
+    # Return cached audio if it exists
+    if os.path.exists(cache_file):
+        return cache_file
 
     # Clean text for speech (remove markdown formatting)
     clean_text = text.replace('**', '').replace('*', '').replace('#', '').replace('_', '')
-    # Escape for JavaScript
-    escaped_text = html.escape(clean_text).replace("'", "\\'").replace("\n", " ")
+
+    # Configure the TTS request
+    synthesis_input = texttospeech.SynthesisInput(text=clean_text)
+
+    # Build the voice request - using a high-quality neural voice
+    voice = texttospeech.VoiceSelectionParams(
+        language_code="en-US",
+        name="en-US-Neural2-D",  # Natural, conversational male voice
+        ssml_gender=texttospeech.SsmlVoiceGender.MALE
+    )
+
+    # Select the audio encoding
+    audio_config = texttospeech.AudioConfig(
+        audio_encoding=texttospeech.AudioEncoding.MP3,
+        speaking_rate=0.95,  # Slightly slower for better clarity
+        pitch=0.0,
+        volume_gain_db=0.0
+    )
+
+    # Perform the text-to-speech request
+    response = tts_client.synthesize_speech(
+        input=synthesis_input,
+        voice=voice,
+        audio_config=audio_config
+    )
+
+    # Save the audio to cache
+    with open(cache_file, "wb") as out:
+        out.write(response.audio_content)
+
+    return cache_file
+
+def speak_text(text: str, button_key: str):
+    """Display text with a TTS button using Google Cloud TTS"""
+    import hashlib
 
     # Create unique key for this text
     text_hash = hashlib.md5(text.encode()).hexdigest()[:8]
@@ -133,38 +198,26 @@ def speak_text(text: str, button_key: str):
         st.markdown(text)
 
     with col2:
-        # Create button that triggers JavaScript TTS
+        # Create button that triggers TTS
         if st.button("🔊", key=unique_key, help="Read aloud"):
-            # Inject JavaScript to use Web Speech API
-            js_code = f"""
-            <script>
-            (function() {{
-                const text = '{escaped_text}';
-                const utterance = new SpeechSynthesisUtterance(text);
+            try:
+                # Generate or retrieve cached audio
+                audio_file = generate_tts_audio(text, text_hash)
 
-                // Configure voice settings for quality
-                utterance.rate = 0.9;  // Slightly slower for better clarity
-                utterance.pitch = 1.0;
-                utterance.volume = 1.0;
+                # Read the audio file and encode as base64
+                with open(audio_file, "rb") as f:
+                    audio_bytes = f.read()
+                    audio_base64 = base64.b64encode(audio_bytes).decode()
 
-                // Try to use a high-quality voice if available
-                const voices = window.speechSynthesis.getVoices();
-                const preferredVoice = voices.find(voice =>
-                    voice.name.includes('Google') ||
-                    voice.name.includes('Microsoft') ||
-                    voice.lang.startsWith('en')
-                );
-                if (preferredVoice) {{
-                    utterance.voice = preferredVoice;
-                }}
-
-                // Cancel any ongoing speech and speak
-                window.speechSynthesis.cancel();
-                window.speechSynthesis.speak(utterance);
-            }})();
-            </script>
-            """
-            st.components.v1.html(js_code, height=0)
+                # Display audio player
+                audio_html = f"""
+                <audio autoplay>
+                    <source src="data:audio/mp3;base64,{audio_base64}" type="audio/mp3">
+                </audio>
+                """
+                st.markdown(audio_html, unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"TTS Error: {str(e)}")
 
 # ============== DICE ROLLING & MECHANICS (GEMINI) ==============
 def roll_dice(dice_notation: str) -> Dict:

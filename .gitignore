@@ -15,6 +15,9 @@ env/
 !package.json
 !tsconfig.json
 
+# Audio cache
+audio_cache/
+
 # Secrets
 .streamlit/secrets.toml
 *.env
